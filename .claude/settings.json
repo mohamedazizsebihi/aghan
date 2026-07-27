@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx --yes create-next-app@latest . --typescript --tailwind --app --src-dir --import-alias \"@/*\" --eslint --use-npm --no-turbopack)",
+      "Bash(cd \"c:\\\\Users\\\\USER\\\\Desktop\\\\aziz\" && mv afghan-cyrine/photo-palt ./photo-palt-temp && ls afghan-cyrine)"
+    ]
+  }
+}
