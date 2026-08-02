@@ -1,26 +1,210 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Afghan-inspired premium palette */
+  --color-cream: #f8f1e4;
+  --color-cream-dark: #efe3cc;
+  --color-ink: #241b14;
+
+  --color-green-950: #0e2019;
+  --color-green-900: #123528;
+  --color-green-800: #1a4a37;
+  --color-green-700: #235f46;
+  --color-green-600: #2d7457;
+
+  --color-burgundy-950: #2c0a12;
+  --color-burgundy-900: #43101c;
+  --color-burgundy-800: #611626;
+  --color-burgundy-700: #7c1d31;
+  --color-burgundy-600: #96263c;
+
+  --color-gold-400: #e8c574;
+  --color-gold-500: #d4a94a;
+  --color-gold-600: #b6893a;
+  --color-gold-700: #94702f;
+
+  --color-brown-900: #2b1c14;
+  --color-brown-800: #3d2a1d;
+  --color-brown-700: #513a28;
+  --color-brown-600: #6b4e34;
+
+  --background: var(--color-cream);
+  --foreground: var(--color-ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-cream: var(--color-cream);
+  --color-cream-dark: var(--color-cream-dark);
+  --color-ink: var(--color-ink);
+
+  --color-green-950: var(--color-green-950);
+  --color-green-900: var(--color-green-900);
+  --color-green-800: var(--color-green-800);
+  --color-green-700: var(--color-green-700);
+  --color-green-600: var(--color-green-600);
+
+  --color-burgundy-950: var(--color-burgundy-950);
+  --color-burgundy-900: var(--color-burgundy-900);
+  --color-burgundy-800: var(--color-burgundy-800);
+  --color-burgundy-700: var(--color-burgundy-700);
+  --color-burgundy-600: var(--color-burgundy-600);
+
+  --color-gold-400: var(--color-gold-400);
+  --color-gold-500: var(--color-gold-500);
+  --color-gold-600: var(--color-gold-600);
+  --color-gold-700: var(--color-gold-700);
+
+  --color-brown-900: var(--color-brown-900);
+  --color-brown-800: var(--color-brown-800);
+  --color-brown-700: var(--color-brown-700);
+  --color-brown-600: var(--color-brown-600);
+
+  --font-display: var(--font-playfair);
+  --font-sans: var(--font-inter);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer components {
+  .input {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid rgb(36 27 20 / 0.15);
+    padding: 0.65rem 1rem;
+    font-size: 0.875rem;
+    outline: none;
+    background: white;
+  }
+  .input:focus {
+    border-color: var(--color-green-800);
+  }
+}
+
+::selection {
+  background: var(--color-gold-500);
+  color: var(--color-ink);
+}
+
+/* Thin gold scrollbar for a premium feel, degrades gracefully */
+* {
+  scrollbar-color: var(--color-gold-600) transparent;
+  scrollbar-width: thin;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+  50% {
+    transform: translateY(-18px) translateX(6px);
+  }
+}
+
+/*
+ * Printing the table QR codes (/admin/tables).
+ *
+ * The sheet is nested deep inside the admin layout — sidebar, page padding,
+ * mobile header — none of which should reach paper. Rather than tagging every
+ * one of those with a print class, everything is hidden and the sheet is made
+ * visible again. `visibility` is what makes that work: unlike `display: none`
+ * on a parent, it is overridable by a descendant.
+ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .qr-print-sheet,
+  .qr-print-sheet * {
+    visibility: visible;
+  }
+
+  /* `.no-print` still needs display:none — a hidden element left in flow would
+     otherwise push the sheet down the page. */
+  .no-print {
+    display: none !important;
+  }
+
+  .qr-print-sheet {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8mm;
+  }
+
+  .qr-card {
+    /* Cards are cut out by hand, so never let one straddle a page break. */
+    break-inside: avoid;
+    /* Keep the gold border and green wordmark instead of letting the browser
+       drop backgrounds and borders to save ink. */
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /*
+   * Printing a single table. The other cards must leave the flow entirely —
+   * merely hiding them would print eleven blank gaps — so this is the one place
+   * `display: none` beats the visibility approach above.
+   */
+  .qr-print-sheet.is-single-print {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .qr-print-sheet.is-single-print .qr-card:not(.is-print-target) {
+    display: none !important;
+  }
+
+  /* Alone on the page there is room to spare, so the card and its code go up to
+     a size that scans from across a table rather than from arm's length. */
+  .qr-print-sheet.is-single-print .qr-card {
+    width: 100%;
+    max-width: 120mm;
+  }
+
+  .qr-print-sheet.is-single-print .qr-card .qr-code svg {
+    width: 70mm;
+    height: 70mm;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}
+
+/*
+ * A row that arrived while the admin was looking at the list.
+ *
+ * The class is added and removed by OrdersLiveFeed rather than being an
+ * animation that expires on its own: a pure keyframe would be flattened to
+ * nothing by the reduced-motion rule below, and someone who prefers less motion
+ * still needs to see which order is new. The fade is decoration; the background
+ * is the message.
+ */
+.order-row-new {
+  background-color: color-mix(in srgb, var(--color-gold-500) 22%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-gold-600);
+  transition: background-color 700ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

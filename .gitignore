@@ -36,6 +36,30 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local agent/IDE tooling — not part of the app
+/.agents
+/.claude/skills
+/.windsurf
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# database
+/prisma/*.db
+/prisma/*.db-journal
+# WAL mode (src/lib/prisma.ts) keeps two sidecar files next to the database
+/prisma/*.db-wal
+/prisma/*.db-shm
+
+# runtime-uploaded content (dish photos, AR models) — deployment-specific,
+# not source-controlled
+/uploads
+
+# docker-compose production runtime data (SQLite db bind mount, Let's
+# Encrypt certs, and the real prod secrets file)
+/data
+/nginx/certbot
+.env.production

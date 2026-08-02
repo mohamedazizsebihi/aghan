@@ -1,0 +1,22 @@
+node_modules
+.next
+.git
+.claude
+.agents
+.windsurf
+photo-palt
+
+# runtime data — must never be baked into the image
+.env
+.env.*
+!.env.example
+data
+uploads
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
+nginx/certbot
+
+npm-debug.log*
+*.md

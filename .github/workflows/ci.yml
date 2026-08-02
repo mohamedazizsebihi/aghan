@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch/PR cancels whatever CI run is still going
+# for the first — there's no point finishing a check on code that's already
+# been superseded.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Runs the postinstall hook (`prisma generate`), which only reads
+      # prisma/schema.prisma — it doesn't connect to a database.
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - run: npm run lint
+
+      # No env vars set here on purpose. Every module that reads a secret at
+      # import time (Stripe, Meshy, R2, the admin session signer) is written to
+      # fail lazily, on first *use*, specifically so the build never needs
+      # secrets it has no business holding — see src/lib/r2.ts and
+      # src/lib/stripe.ts. If this step ever needs an env var added to pass,
+      # that's a regression in that contract, not a CI config to patch around.
+      - name: Build
+        run: npm run build
+
+  # Validates the image actually builds — this project ships as a single
+  # Docker container (see docker-compose.yml) and the Dockerfile has its own
+  # failure modes (missing COPY, build-arg drift) that `npm run build` above
+  # can't catch. Build only: nothing is pushed anywhere or needs registry
+  # credentials.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

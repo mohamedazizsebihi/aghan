@@ -1,0 +1,74 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bagh-e-kabul:latest
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      # Fixed by this compose file — not meant to be overridden from
+      # .env.production, since they must match the volumes below.
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/prod.db
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - web
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    # nginx reads ssl_certificate once, at startup, and never notices the file
+    # changing underneath it. certbot renewed happily around day 60 and logged
+    # success; the certificate held in memory still expired at day 90 and took
+    # the whole site down — QR scans, Stripe webhooks and /admin alike. Reloading
+    # on a timer is what turns a successful renewal into a served certificate.
+    command: >
+      /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done
+      & nginx -g 'daemon off;'"
+    networks:
+      - web
+
+  # Renews the Let's Encrypt certificate every 12h (a no-op unless it's
+  # within its renewal window). First issuance is done by
+  # nginx/init-letsencrypt.sh, not by this service.
+  #
+  # Renewal alone is not enough — see the reload loop on the nginx service.
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    entrypoint: >
+      /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w
+      /var/www/certbot; sleep 12h & wait $${!}; done"
+
+networks:
+  web:
+    driver: bridge

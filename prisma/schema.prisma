@@ -1,0 +1,193 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum SpiceLevel {
+  NONE
+  MILD
+  MEDIUM
+  HOT
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum FulfillmentType {
+  DELIVERY
+  PICKUP
+  /// Ordered from a table in the restaurant, via its QR code. Carries a
+  /// tableNumber on the Order; the other two never do.
+  DINE_IN
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum ArGenerationStatus {
+  PENDING
+  IN_PROGRESS
+  FAILED
+}
+
+/// Which Meshy task the stored arGenerationTaskId refers to. A dish model is
+/// built by two chained tasks — see src/lib/meshy.ts.
+enum ArGenerationPhase {
+  MODELING
+  SIZING
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  imageUrl  String?
+  sortOrder Int      @default(0)
+  dishes    Dish[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Dish {
+  id                 String              @id @default(cuid())
+  name               String
+  slug               String              @unique
+  description        String
+  ingredients        String
+  allergens          String
+  price              Int
+  spiceLevel         SpiceLevel          @default(NONE)
+  imageUrl           String?
+  arModelGlbUrl      String?
+  arGenerationStatus ArGenerationStatus?
+  arGenerationTaskId String?
+  arGenerationPhase  ArGenerationPhase?
+  isPopular          Boolean             @default(false)
+  isAvailable        Boolean             @default(true)
+  sortOrder          Int                 @default(0)
+  categoryId         String
+  category           Category            @relation(fields: [categoryId], references: [id])
+  orderItems         OrderItem[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  /// SQLite does not index foreign keys on its own, so the menu's
+  /// category-by-category read was a full table scan.
+  @@index([categoryId])
+}
+
+model Order {
+  id              String          @id @default(cuid())
+  orderNumber     String          @unique
+  /// Nullable because a cash dine-in order needs no contact details — the
+  /// customer is sitting at a known table, so a name and phone number are
+  /// friction with nothing on the other end of them. Every other combination
+  /// still requires all three; that rule lives in src/lib/validators.ts, which
+  /// is the only way an Order is ever created.
+  customerName    String?
+  customerEmail   String?
+  customerPhone   String?
+  fulfillmentType FulfillmentType
+  deliveryAddress String?
+  /// Set only for DINE_IN, from the table's QR code. Deliberately a plain int
+  /// rather than a relation to Table: the number printed on the card is what
+  /// staff need to see, and a snapshot keeps last month's orders readable even
+  /// if that table is later retired.
+  tableNumber     Int?
+  notes           String?
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus   @default(UNPAID)
+  status          OrderStatus     @default(PENDING)
+  subtotal        Int
+  deliveryFee     Int             @default(0)
+  total           Int
+  stripeSessionId String?         @unique
+  items           OrderItem[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  /// Every admin screen reads orders newest-first, and the dashboard filters on
+  /// status within today. Without these the kitchen's live list re-scanned the
+  /// whole order history on every incoming order.
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
+model OrderItem {
+  id            String  @id @default(cuid())
+  orderId       String
+  order         Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  dishId        String?
+  dish          Dish?   @relation(fields: [dishId], references: [id], onDelete: SetNull)
+  nameSnapshot  String
+  priceSnapshot Int
+  quantity      Int
+
+  /// Both are foreign keys, which SQLite leaves unindexed. orderId carries every
+  /// `include: { items: true }`; dishId is walked on each cascade when a dish is
+  /// deleted.
+  @@index([orderId])
+  @@index([dishId])
+}
+
+model Review {
+  id           String   @id @default(cuid())
+  customerName String
+  rating       Int
+  comment      String
+  isPublished  Boolean  @default(true)
+  createdAt    DateTime @default(now())
+}
+
+/// A physical table in the restaurant, and the definition of which table
+/// numbers exist at all.
+///
+/// Deliberately NOT related to Order: an order copies the number it was placed
+/// for (see Order.tableNumber), the same way OrderItem copies a dish's name and
+/// price. Deleting or renumbering a table therefore leaves last month's orders
+/// readable instead of rewriting or orphaning them.
+model Table {
+  id       String   @id @default(cuid())
+  number   Int      @unique
+  /// Inactive tables keep their history and their number reserved, but refuse
+  /// new orders — for a table that's broken, or a terrace closed for winter.
+  isActive Boolean  @default(true)
+  /// Deleting is a soft delete, because a number must never come back. A hard
+  /// delete of the highest table freed its number for the next "add", and the
+  /// printed card still on the table then pointed at a different table. Keeping
+  /// the row keeps @unique holding that number forever, so the next number is
+  /// still max(number) + 1 with no separate high-water mark to maintain.
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+}

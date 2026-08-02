@@ -1,0 +1,43 @@
+# Local Docker smoke-test — NOT for production.
+#
+# docker-compose.yml is the real deployment stack (nginx + Let's Encrypt +
+# certbot, needs a public domain). This file runs just the app container,
+# published directly on localhost:3000, so you can confirm the Docker image
+# itself builds and runs correctly while still in dev.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up -d --build
+#   docker compose -f docker-compose.dev.yml exec app npx tsx prisma/seed.ts
+#   docker compose -f docker-compose.dev.yml down
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bagh-e-kabul:dev
+    env_file:
+      - .env
+    environment:
+      # Fixed here rather than read from .env, same reasoning as
+      # docker-compose.yml: must match the volume mounted below, not
+      # whatever path .env uses for `npm run dev` on the host.
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/dev.db
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

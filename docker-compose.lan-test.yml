@@ -1,0 +1,33 @@
+# LAN/HTTPS test — dev phase only, NOT for production.
+#
+# Terminates TLS with a self-signed cert (nginx/lan-test/) and proxies to
+# `npm run dev` running directly on the host, so you can open the site from
+# a real phone on the same Wi-Fi over a secure context, which a plain
+# http://<lan-ip>:3000 origin is not.
+#
+# This does NOT let you test AR. Scene Viewer and Quick Look fetch the .glb
+# from a separate app that never saw the certificate warning you accepted in
+# the browser, so they silently fail to load the model. Use a tunnel with a
+# publicly trusted certificate for that — see "Testing AR on a real phone"
+# in the README.
+#
+# Usage:
+#   npm run dev                                          # in one terminal
+#   docker compose -f docker-compose.lan-test.yml up -d  # in another
+#   Then, on your phone: https://192.168.1.11
+#   (accept the self-signed certificate warning once)
+#
+#   docker compose -f docker-compose.lan-test.yml down   # when done
+#
+# If your LAN IP isn't 192.168.1.11 anymore, regenerate the cert:
+#   see nginx/lan-test/san.cnf, then update its IP.1 entry and
+#   next.config.ts's `allowedDevOrigins` to match.
+
+services:
+  lan-test-nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx/lan-test/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/lan-test/certs:/etc/nginx/certs:ro
