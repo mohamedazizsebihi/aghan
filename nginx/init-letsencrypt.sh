@@ -29,9 +29,15 @@ fi
 
 echo "### Downloading recommended TLS parameters..."
 mkdir -p "$data_path/conf"
-curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf \
+# certbot/certbot restructured its repo (the nginx plugin merged into the main
+# certbot package) — these paths point at the current layout on `main`, not
+# the old `master`/`certbot-nginx` package split. Verify with
+# https://github.com/certbot/certbot/tree/main/certbot/src/certbot if this
+# ever 404s again, and use -f so a broken URL fails loudly instead of writing
+# an empty file that nginx then can't parse.
+curl -sf https://raw.githubusercontent.com/certbot/certbot/main/certbot/src/certbot/_internal/plugins/nginx/tls_configs/options-ssl-nginx.conf \
   > "$data_path/conf/options-ssl-nginx.conf"
-curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/certbot/ssl-dhparams.pem \
+curl -sf https://raw.githubusercontent.com/certbot/certbot/main/certbot/src/certbot/ssl-dhparams.pem \
   > "$data_path/conf/ssl-dhparams.pem"
 
 echo "### Creating a temporary self-signed certificate for $domain..."
