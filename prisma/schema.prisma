@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 enum SpiceLevel {
@@ -94,8 +94,8 @@ model Dish {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
 
-  /// SQLite does not index foreign keys on its own, so the menu's
-  /// category-by-category read was a full table scan.
+  /// Neither SQLite nor Postgres indexes foreign keys on its own, so the
+  /// menu's category-by-category read was a full table scan.
   @@index([categoryId])
 }
 
@@ -146,9 +146,9 @@ model OrderItem {
   priceSnapshot Int
   quantity      Int
 
-  /// Both are foreign keys, which SQLite leaves unindexed. orderId carries every
-  /// `include: { items: true }`; dishId is walked on each cascade when a dish is
-  /// deleted.
+  /// Both are foreign keys, which neither SQLite nor Postgres indexes on its
+  /// own. orderId carries every `include: { items: true }`; dishId is walked
+  /// on each cascade when a dish is deleted.
   @@index([orderId])
   @@index([dishId])
 }

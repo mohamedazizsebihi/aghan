@@ -2,7 +2,7 @@
  * Fixed-window per-key request limiter.
  *
  * In-memory and therefore per-process, which is exactly this deployment (one
- * Node container, one SQLite file — see docker-compose.yml). Running more than
+ * Node container, one Postgres container — see docker-compose.yml). Running more than
  * one app instance would give each its own counters and multiply the effective
  * limit; that setup needs a shared store (Redis) or the limit enforced at
  * nginx instead.

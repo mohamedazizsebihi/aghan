@@ -1,73 +1,36 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
-import Database from "better-sqlite3";
 import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { PrismaPg } from "@prisma/adapter-pg";
 
-const DATABASE_URL = process.env.DATABASE_URL || "file:./prisma/dev.db";
-
-/**
- * How long a blocked write waits for the lock before throwing SQLITE_BUSY.
- * better-sqlite3 defaults to 5s; under WAL, contention windows are short, and
- * a slow query is far better than a customer's order failing outright.
- */
-const BUSY_TIMEOUT_MS = 15_000;
-
-/**
- * Puts the database in WAL mode.
- *
- * The default journal mode is `delete`, where a writer takes an exclusive lock
- * on the whole file — every reader blocks for the duration of every write. WAL
- * lets readers carry on against the last committed snapshot while a write is in
- * flight, which is what keeps the storefront responsive while orders are being
- * placed.
- *
- * `journal_mode` is a property of the database file, not of a connection, so
- * setting it once on a throwaway connection is enough and it persists. (Almost
- * every other pragma, `synchronous` included, is per-connection and could not
- * be set this way — the driver adapter owns Prisma's own connections.)
- *
- * Failure here is deliberately non-fatal: a database that is merely slower to
- * write is much better than an app that refuses to boot.
- */
-function enableWalMode(url: string) {
-  const file = url.replace(/^file:/, "");
-  if (file === ":memory:" || file.startsWith("file::memory:")) return;
-
-  const resolved = path.resolve(file);
-  // Before the first `prisma migrate`, the file legitimately does not exist.
-  // Opening it here would create an empty database and race the migration, so
-  // skip — the next boot, after migrations, applies WAL and it sticks.
-  if (!existsSync(resolved)) return;
-
-  try {
-    const db = new Database(resolved);
-    try {
-      const mode = db.pragma("journal_mode = WAL", { simple: true });
-      if (mode !== "wal") {
-        console.warn(`[db] could not enable WAL (journal_mode is "${mode}")`);
-      }
-    } finally {
-      db.close();
-    }
-  } catch (error) {
-    console.warn("[db] could not enable WAL:", error);
-  }
-}
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) throw new Error("DATABASE_URL is not set");
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-if (!globalForPrisma.prisma) enableWalMode(DATABASE_URL);
-
-const adapter = new PrismaBetterSqlite3({
-  url: DATABASE_URL,
-  timeout: BUSY_TIMEOUT_MS,
+const adapter = new PrismaPg({
+  connectionString: DATABASE_URL,
+  max: 10,
+  idleTimeoutMillis: 30_000,
+  // Postgres uses MVCC, not SQLite's whole-file exclusive writer lock, so
+  // there's no reason to wait long for a connection the way the old
+  // SQLite adapter's 15s BUSY_TIMEOUT_MS did. Fail fast instead: a slow
+  // timeout here would mask a genuinely unreachable database as a hang.
+  connectionTimeoutMillis: 5_000,
 });
 
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+/**
+ * Cached on `globalThis` unconditionally — including in production, unlike
+ * the NODE_ENV-gated pattern shown in most Prisma examples.
+ *
+ * Next.js bundles the RSC and SSR layers into separate chunks even in a
+ * production build (verified: two distinct compiled copies of this file
+ * under `.next/server/chunks/`), so a production-only guard here silently
+ * created two live PrismaClients — and two separate connection pools — in
+ * the same process. `src/lib/order-events.ts` and `src/lib/rate-limit.ts`
+ * pin their own per-process state to `globalThis` the same way, for the
+ * same reason.
+ */
+globalForPrisma.prisma = prisma;

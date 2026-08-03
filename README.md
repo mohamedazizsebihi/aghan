@@ -8,7 +8,8 @@ site (menu, ordering, story, contact) and an owner-facing admin panel
 
 - **Next.js 16** (App Router, TypeScript, Turbopack)
 - **Tailwind CSS v4** for the design system
-- **Prisma 7** + **SQLite** (via the `better-sqlite3` driver adapter) for data
+- **Prisma 7** + **PostgreSQL** (via the `@prisma/adapter-pg` driver adapter,
+  run in its own container — see `docker-compose.yml`) for data
 - **Framer Motion** for animations, **Zustand** for the cart
 - **Stripe Checkout** for optional online card payments (cash on
   delivery/pickup always works, with or without Stripe configured)
@@ -16,14 +17,17 @@ site (menu, ordering, story, contact) and an owner-facing admin panel
 ## First-Time Setup
 
 ```bash
+docker compose -f docker-compose.dev.yml up -d postgres  # starts local Postgres
 npm install                # also runs `prisma generate` automatically
-npx prisma migrate dev     # creates prisma/dev.db and applies the schema
+npx prisma migrate dev     # applies the schema to it
 npm run db:seed            # seeds categories, dishes, reviews, and the admin account
 npm run dev                # http://localhost:3000
 ```
 
 The `.env` file is already filled in with working local-dev defaults. Copy
-`.env.example` if you ever need to recreate it.
+`.env.example` if you ever need to recreate it. Unlike the old SQLite setup,
+`npm run dev` needs that first `docker compose` command's Postgres container
+running — it's not a file that materializes itself.
 
 ### Admin login
 
@@ -398,7 +402,7 @@ so unguessability was never access control.
 `/api/orders`, `/api/checkout/session`, and `/api/auth/login` are reachable
 without logging in, so what they accept is bounded. Without these bounds a
 single unauthenticated request with 50,000 line items was accepted, wrote
-50,000 rows, and held the SQLite write lock for 22 seconds — blocking every
+50,000 rows, and held the database write lock for 22 seconds — blocking every
 other request in the process.
 
 | Limit | Value | Where |
@@ -427,19 +431,26 @@ which `proxy_set_header` overwrites, so a caller can't forge it. This assumes
 the Node server is only reachable through nginx — which the Compose file
 ensures by publishing ports on the nginx service alone.
 
-### SQLite WAL
+### Postgres connections
 
-The database runs in **WAL mode**, set on first boot by `src/lib/prisma.ts`.
-The SQLite default (`journal_mode = delete`) makes a writer take an exclusive
-lock on the whole file, so every read blocks for the duration of every write.
-WAL lets reads continue against the last committed snapshot while a write is in
-flight, which is what keeps the storefront responsive while orders are coming
-in.
+`src/lib/prisma.ts` pools connections via `@prisma/adapter-pg` (`max: 10`),
+cached once per process on `globalThis` — including in production, since
+Next.js bundles the RSC and SSR layers into separate chunks even in a
+production build, and a `NODE_ENV`-gated cache would silently create two
+`PrismaClient`s (and two connection pools) in the same process. Postgres uses
+MVCC rather than SQLite's whole-file exclusive writer lock, so there's no
+equivalent of the old `BUSY_TIMEOUT_MS` to tune — a stalled writer no longer
+blocks every reader.
 
-It is a property of the database file, not the connection, so it persists once
-set — which is why it leaves `dev.db-wal` and `dev.db-shm` next to the database
-(both git-ignored). Back up all three together, or checkpoint first: a `.db`
-copied on its own can be missing recent commits.
+**Backups**: a live, consistent snapshot is one command —
+
+```bash
+docker compose exec postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup.sql
+```
+
+Restore into a fresh database with `psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < backup.sql`.
+Unlike the old SQLite file, there is no `-wal`/`-shm` sidecar to keep in sync —
+`pg_dump` is self-contained and safe to run while the app is live.
 
 ## Editing Business Info
 
@@ -457,39 +468,51 @@ one place: `src/lib/constants.ts`.
 
 ## Deploying
 
-This is built to run fully locally out of the box (SQLite file database,
-local image uploads written to `public/images/dishes/`). Before deploying
-to a serverless platform (e.g. Vercel), note:
+Built to run as a single, persistent Node container plus a Postgres
+container (in-process SSE for live order tracking, in-process rate
+limiting) behind nginx — see `docker-compose.yml`. That statefulness is
+why this doesn't fit a serverless platform (Vercel, and similar): every
+invocation can land on a different, short-lived instance, so the database
+wouldn't be reliably shared and live tracking / rate limits would silently
+stop working across instances. Deploy it to a VPS, or a managed
+Docker host with a persistent volume (Fly.io, Railway) — see the two
+Compose files below either way.
 
-- SQLite + local file writes don't persist on serverless — swap
-  `DATABASE_URL` for a hosted Postgres database (e.g. Neon, Vercel
-  Postgres) and update the Prisma driver adapter accordingly.
-- Dish photo uploads would need a blob storage service (e.g. Vercel Blob,
-  S3) instead of writing to `public/`.
-
-Neither change requires touching the application logic — only the
-database connection and the upload route.
+Dish/category photos and AR models are stored in Cloudflare R2 (see
+`src/lib/r2.ts`), not on the container's disk, so they're already
+portable across hosts and redeploys without any of the above concerns.
 
 ### Docker
 
 Two Compose files, for two different purposes:
 
-- **`docker-compose.dev.yml`** — local smoke-test. Runs just the app
-  container, published directly on `http://localhost:3000`, reading config
-  from `.env`. No domain, no nginx, no certificates needed.
+- **`docker-compose.dev.yml`** — local smoke-test. Runs the app container
+  plus a Postgres container, published directly on `http://localhost:3000`
+  (and `localhost:5433` for Postgres, kept off the default 5432 to avoid a
+  native Postgres install already on the host), reading config from `.env`. No domain,
+  no nginx, no certificates needed. Also how `npm run dev` (run bare on the
+  host) gets a database — see "First-Time Setup" above.
 
   ```
   docker compose -f docker-compose.dev.yml up -d --build
   docker compose -f docker-compose.dev.yml exec app npx tsx prisma/seed.ts
   ```
 
-- **`docker-compose.yml`** — the real deployment stack (app + nginx +
-  Let's Encrypt via certbot). Requires a public domain pointed at the
+- **`docker-compose.yml`** — the real deployment stack (app + Postgres +
+  nginx + Let's Encrypt via certbot). Requires a public domain pointed at the
   server and a filled-in `.env.production` (copy it from
-  `.env.production.example`). See `nginx/init-letsencrypt.sh` for first-time
-  certificate issuance.
+  `.env.production.example`).
 
   ```
   cp .env.production.example .env.production   # then fill in real values
+  sed -i 's/your-domain\.example/yourdomain.com/g' nginx/conf.d/default.conf
+  docker compose build
+  DOMAIN=yourdomain.com EMAIL=you@yourdomain.com ./nginx/init-letsencrypt.sh
   docker compose up -d
   ```
+
+  The `init-letsencrypt.sh` step is required before the first `up` — nginx's
+  config points at a certificate file that doesn't exist yet, so starting
+  nginx cold (without running the script first) fails. The final
+  `docker compose up -d` is still needed afterward: the init script only
+  starts `app` and `nginx`, not the `certbot` renewal service.

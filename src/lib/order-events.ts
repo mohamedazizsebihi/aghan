@@ -1,15 +1,17 @@
 /**
  * In-process notification that an order changed.
  *
- * SQLite has no LISTEN/NOTIFY, so "the kitchen moved this order along" has to
- * travel through the process itself: the admin's PATCH publishes, and every SSE
- * stream watching that order wakes up and re-reads it.
+ * Postgres does have LISTEN/NOTIFY, but this deployment doesn't use it —
+ * "the kitchen moved this order along" travels through the process itself
+ * instead: the admin's PATCH publishes, and every SSE stream watching that
+ * order wakes up and re-reads it. No separate pub/sub wiring to run or watch.
  *
- * Per-process, which is exactly this deployment (one Node container, one SQLite
- * file — see docker-compose.yml), and the same constraint already documented
- * for the AR generation lock and the rate limiter. A second app instance would
- * only notify its own listeners; that setup needs a shared bus, or the streams
- * falling back on their periodic re-read, which is why that re-read exists.
+ * Per-process, which is exactly this deployment (one Node container, one
+ * Postgres container — see docker-compose.yml), and the same constraint
+ * already documented for the AR generation lock and the rate limiter. A
+ * second app instance would only notify its own listeners; that setup needs
+ * a shared bus, or the streams falling back on their periodic re-read, which
+ * is why that re-read exists.
  *
  * Deliberately carries no payload. Listeners re-read from the database instead,
  * so there is one source of truth and no risk of publishing a stale snapshot

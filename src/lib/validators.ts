@@ -8,8 +8,8 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *
  * Without them the checkout schema accepted an unbounded `items` array and
  * unbounded strings: one unauthenticated request with 50,000 line items was
- * accepted and committed 50,000 OrderItem rows, holding the SQLite write lock
- * for 22 seconds and blocking every other request in the process.
+ * accepted and committed 50,000 OrderItem rows, holding the database write
+ * lock for 22 seconds and blocking every other request in the process.
  *
  * These are sized for a restaurant order, not for what the format allows — a
  * real cart is a handful of dishes.

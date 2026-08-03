@@ -179,7 +179,7 @@ async function advance(dishId: string): Promise<ArGenerationState> {
  * each start a sizing task — two charges, and the second overwrites the
  * first's bookkeeping. Sharing the in-flight promise makes the extra callers
  * observers of the same step. This is per-process, which is exactly the
- * deployment here (one Node server, one SQLite file); a multi-instance
+ * deployment here (one Node server, one Postgres container); a multi-instance
  * deployment would need the claim in the database instead.
  */
 const inFlight = new Map<string, Promise<ArGenerationState>>();

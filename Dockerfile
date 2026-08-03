@@ -11,11 +11,7 @@ FROM node:${NODE_VERSION} AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# better-sqlite3 ships prebuilt binaries for common platforms, but falls back
-# to compiling from source (node-gyp) when none matches — the toolchain must
-# be present at `npm ci` time for that fallback to work.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 make g++ ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only what `npm ci`'s postinstall (`prisma generate`) needs first, so
@@ -57,12 +53,11 @@ COPY --from=builder /app/scripts ./scripts
 
 COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# /app/data (SQLite file) and /app/uploads (dish photos, AR models) are meant
-# to be bind-mounted from the host — creating them here with the right
-# ownership first means a fresh empty mount inherits that ownership instead
-# of falling back to root.
+# /app/uploads (dish photos, AR models) is meant to be bind-mounted from the
+# host — creating it here with the right ownership first means a fresh empty
+# mount inherits that ownership instead of falling back to root.
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-    && mkdir -p /app/data /app/uploads \
+    && mkdir -p /app/uploads \
     && chown -R nextjs:nodejs /app
 
 USER nextjs
