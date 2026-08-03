@@ -1,8 +1,20 @@
 import { PrismaClient } from "@/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) throw new Error("DATABASE_URL is not set");
+/**
+ * No fallback other than an empty string, and deliberately no eager check
+ * that throws when it's missing: `next build`'s "Collecting page data" step
+ * imports every route module — including ones that don't touch the database
+ * at request time, like /api/health before a query actually runs — which is
+ * enough to evaluate this file. The build never has DATABASE_URL (see
+ * .dockerignore excluding .env*, and the CI comment on this exact contract),
+ * so throwing here broke `docker build` outright. `pg`'s connection pool is
+ * lazy — constructing it with a bad/empty string is harmless; only an actual
+ * query at runtime would fail, which is the correct place for a missing
+ * DATABASE_URL to surface. Same reasoning as src/lib/r2.ts and
+ * src/lib/stripe.ts: fail on first use, not on import.
+ */
+const DATABASE_URL = process.env.DATABASE_URL ?? "";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
